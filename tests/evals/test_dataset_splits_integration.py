@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import time
 
 import pytest
 
@@ -34,6 +35,8 @@ def test_train_and_test_are_disjoint_per_provider(mod_name, cls_name):
     try:
         train_ds = ds_cls()
         train_ds.load(split="train", seed=42)
+        # Add delay between HF Hub requests to avoid 429 rate limiting
+        time.sleep(3)
         test_ds = ds_cls()
         test_ds.load(split="test", seed=42)
     except (ImportError, ModuleNotFoundError) as exc:
@@ -44,6 +47,10 @@ def test_train_and_test_are_disjoint_per_provider(mod_name, cls_name):
             pytest.skip(f"{cls_name}: gated dataset, no HF auth ({type(exc).__name__})")
         if "DatasetNotFound" in type(exc).__name__:
             pytest.skip(f"{cls_name}: dataset not accessible ({type(exc).__name__})")
+        if "429" in msg or "Too Many Requests" in msg:
+            pytest.skip(f"{cls_name}: HF Hub rate limited (429)")
+        if "LocalEntryNotFoundError" in type(exc).__name__:
+            pytest.skip(f"{cls_name}: HF Hub access error ({type(exc).__name__})")
         raise
 
     train_ids = {r.record_id for r in train_ds.iter_records()}
