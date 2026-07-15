@@ -15,12 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.TRAFFIC_TOKEN }}
+          token: ${{ secrets.TRAFFIC_TOKEN || github.token }}
 
       - name: Fetch clone traffic
         env:
-          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN || github.token }}
         run: |
+          set -euo pipefail
           gh api repos/${{ github.repository }}/traffic/clones > /tmp/traffic.json
 
       - name: Update accumulated data
