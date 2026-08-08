@@ -18,38 +18,42 @@ jobs:
           token: ${{ secrets.TRAFFIC_TOKEN || github.token }}
 
       - name: Fetch clone traffic
+        id: traffic
         env:
           GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN || github.token }}
         run: |
-          set -euo pipefail
-          gh api repos/${{ github.repository }}/traffic/clones > /tmp/traffic.json
+          set -uo pipefail
+          http_code="$(gh api -i repos/${{ github.repository }}/traffic/clones 2>/tmp/traffic-error.txt | awk '/^HTTP\// {code=$2} END {print code}')"
+          if [ "$http_code" = "200" ]; then
+            gh api repos/${{ github.repository }}/traffic/clones > /tmp/traffic.json
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=Clone traffic unavailable::GitHub traffic API returned HTTP ${http_code:-unknown}. Configure repository secret TRAFFIC_TOKEN with push access to collect clone metrics. Existing accumulated data is preserved."
+          cat /tmp/traffic-error.txt || true
 
       - name: Update accumulated data
+        if: steps.traffic.outputs.available == 'true'
         run: |
           python3 - <<'PYEOF'
           import json
           from datetime import datetime, timezone
 
-          # Load current traffic data from API
           with open("/tmp/traffic.json") as f:
               traffic = json.load(f)
 
-          # Load accumulated data
           data_path = ".github/clone-stats/clone-data.json"
           with open(data_path) as f:
               accumulated = json.load(f)
 
           daily = accumulated.get("daily", {})
-
-          # Merge new daily entries (keyed by date to avoid double-counting)
           for entry in traffic.get("clones", []):
-              date_key = entry["timestamp"][:10]  # "2026-03-26"
-              daily[date_key] = entry["count"]  # total clones, not unique
+              date_key = entry["timestamp"][:10]
+              daily[date_key] = entry["count"]
 
-          # Recalculate total from all daily data
           total = sum(daily.values())
-
-          # Update accumulated data
           accumulated["daily"] = dict(sorted(daily.items()))
           accumulated["total_clones"] = total
           accumulated["last_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -58,7 +62,6 @@ jobs:
               json.dump(accumulated, f, indent=2)
               f.write("\n")
 
-          # Update shields.io endpoint badge
           badge = {
               "schemaVersion": 1,
               "label": "Git Clones",
@@ -66,7 +69,6 @@ jobs:
               "color": "green",
               "namedLogo": "git"
           }
-
           with open(".github/clone-stats/badge.json", "w") as f:
               json.dump(badge, f, indent=2)
               f.write("\n")
@@ -75,6 +77,7 @@ jobs:
           PYEOF
 
       - name: Commit and push
+        if: steps.traffic.outputs.available == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
