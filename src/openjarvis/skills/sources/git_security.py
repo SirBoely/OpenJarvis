@@ -184,7 +184,9 @@ def assert_trusted_checkout(
                 "skill cache contains modified, untracked or ignored content"
             )
     except subprocess.CalledProcessError as exc:
-        raise SkillSourceSecurityError("failed to attest skill source checkout") from exc
+        raise SkillSourceSecurityError(
+            "failed to attest skill source checkout"
+        ) from exc
 
 
 def sync_pinned_checkout(cache_root: Path, repo_url: str, revision: str) -> None:
