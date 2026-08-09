@@ -2,18 +2,36 @@
 
 External skill repositories are untrusted input. This module provides a
 single fail-closed boundary for repository URL validation, immutable revision
-pinning, origin attestation and clean-worktree checks.
+pinning, clean staging checkouts and checkout attestation.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
 _FULL_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _GITHUB_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+_GIT_ENV_KEYS_TO_REMOVE = {
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_ASKPASS",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_EXEC_PATH",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_TEMPLATE_DIR",
+    "GIT_WORK_TREE",
+}
 
 
 class SkillSourceSecurityError(ValueError):
@@ -70,17 +88,46 @@ def normalize_github_https_url(repo_url: str) -> str:
     return f"https://github.com/{owner}/{repo}.git"
 
 
+def _git_environment() -> dict[str, str]:
+    """Build a non-interactive Git environment without inherited Git overrides."""
+    env = os.environ.copy()
+    for key in tuple(env):
+        if key in _GIT_ENV_KEYS_TO_REMOVE or key.startswith("GIT_CONFIG_"):
+            env.pop(key, None)
+
+    # External skill sources are public HTTPS repositories. Ignore user/system
+    # Git config so repository-controlled attributes cannot activate a locally
+    # configured smudge/filter command during checkout.
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_LFS_SKIP_SMUDGE"] = "1"
+    return env
+
+
 def _run_git(
     cache_root: Path,
     *args: str,
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-C", str(cache_root), *args],
-        check=True,
-        text=True,
-        capture_output=capture_output,
-    )
+    """Run Git with hooks/fsmonitor disabled and inherited Git overrides removed."""
+    with tempfile.TemporaryDirectory(prefix="openjarvis-empty-hooks-") as hooks_dir:
+        return subprocess.run(
+            [
+                "git",
+                "-c",
+                f"core.hooksPath={hooks_dir}",
+                "-c",
+                "core.fsmonitor=false",
+                "-C",
+                str(cache_root),
+                *args,
+            ],
+            check=True,
+            text=True,
+            capture_output=capture_output,
+            env=_git_environment(),
+        )
 
 
 def _assert_git_directory(cache_root: Path) -> None:
@@ -141,52 +188,62 @@ def assert_trusted_checkout(
 
 
 def sync_pinned_checkout(cache_root: Path, repo_url: str, revision: str) -> None:
-    """Synchronize a cache to one approved immutable commit and attest it.
+    """Build one approved immutable checkout in a fresh staging directory.
 
-    The cache is disposable. Existing tracked, untracked and ignored data are
-    reset before attestation so stale local content cannot silently survive.
+    Existing caches are never used as Git execution roots during synchronization.
+    A fresh staging repository is initialized with inherited Git configuration,
+    hooks, fsmonitor, interactive prompts and Git-LFS smudging disabled. Only
+    after exact-HEAD and clean-worktree attestation is the disposable old cache
+    replaced with the staged checkout.
     """
     normalized_url = normalize_github_https_url(repo_url)
     normalized_revision = validate_full_commit_sha(revision)
     cache_root = Path(cache_root)
 
-    if cache_root.exists() and not (cache_root / ".git").exists():
-        raise SkillSourceSecurityError(
-            "skill cache path exists but is not an attested Git checkout"
+    if cache_root.is_symlink():
+        raise SkillSourceSecurityError("skill cache root must not be a symlink")
+    if cache_root.exists() and not cache_root.is_dir():
+        raise SkillSourceSecurityError("skill cache root must be a directory")
+
+    cache_root.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(
+            prefix=f".{cache_root.name}.staging-",
+            dir=str(cache_root.parent),
         )
+    )
 
-    if not cache_root.exists():
-        cache_root.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            ["git", "clone", "--no-checkout", normalized_url, str(cache_root)],
-            check=True,
-            text=True,
-        )
-
-    _assert_git_directory(cache_root)
-
-    # Refuse a poisoned cache before fetching from it.
+    promoted = False
     try:
-        origin = _run_git(
-            cache_root,
-            "remote",
-            "get-url",
+        _run_git(staging, "init", "--template=")
+        _run_git(staging, "remote", "add", "origin", normalized_url)
+        _run_git(
+            staging,
+            "fetch",
+            "--depth=1",
+            "--no-tags",
             "origin",
-            capture_output=True,
-        ).stdout.strip()
-        if normalize_github_https_url(origin) != normalized_url:
-            raise SkillSourceSecurityError("skill cache origin does not match policy")
+            normalized_revision,
+        )
+        _run_git(staging, "checkout", "--detach", "--force", normalized_revision)
+        _run_git(staging, "reset", "--hard", normalized_revision)
+        _run_git(staging, "clean", "-ffdx")
+        assert_trusted_checkout(staging, normalized_url, normalized_revision)
 
-        _run_git(cache_root, "fetch", "--no-tags", "--prune", "origin", normalized_revision)
-        _run_git(cache_root, "checkout", "--detach", "--force", normalized_revision)
-        _run_git(cache_root, "reset", "--hard", normalized_revision)
-        _run_git(cache_root, "clean", "-ffdx")
+        if cache_root.exists():
+            shutil.rmtree(cache_root)
+        staging.replace(cache_root)
+        promoted = True
+
+        # Re-attest from the final location before returning it to a resolver.
+        assert_trusted_checkout(cache_root, normalized_url, normalized_revision)
     except subprocess.CalledProcessError as exc:
         raise SkillSourceSecurityError(
-            "unable to synchronize approved immutable skill revision"
+            "unable to stage approved immutable skill revision"
         ) from exc
-
-    assert_trusted_checkout(cache_root, normalized_url, normalized_revision)
+    finally:
+        if not promoted and staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 __all__ = [
