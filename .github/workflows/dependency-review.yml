@@ -1,23 +1,28 @@
-name: Dependency Review
+name: Dependency Vulnerability Gate
 
 on:
   pull_request:
     branches: [main]
+  merge_group:
+    branches: [main]
 
+# GitHub Dependency Review requires the repository Dependency Graph, which is
+# not currently enabled. Keep an enforceable vulnerability gate independent of
+# that repository feature. The official OSV reusable PR workflow compares base
+# and head and fails when the PR introduces new known vulnerabilities.
 permissions:
+  actions: read
   contents: read
 
 jobs:
-  dependency-review:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - name: Reject vulnerable dependency changes
-        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
-        with:
-          fail-on-severity: moderate
-          comment-summary-in-pr: never
+  osv-pr-scan:
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@3adb4b14a2b0623876d18d863a498b785fb3752d # v2.3.8
+    with:
+      upload-sarif: false
+      fail-on-vuln: true
+      scan-args: |-
+        --recursive
+        ./
+    permissions:
+      actions: read
+      contents: read
