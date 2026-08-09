@@ -7,10 +7,6 @@ name = "OpenJarvis"
 version = "0.1.1"
 description = "OpenJarvis — modular AI assistant backend with composable intelligence primitives"
 readme = "README.md"
-# Upper bound: numpy 2.2.x (pinned transitively via datasets/pandas) ships no
-# cp314 Windows wheel, so under Python 3.14 uv would compile numpy from source
-# (Meson) and fail on Windows boxes without a C toolchain (#350). Cap to the
-# range that has prebuilt wheels; matches the classifiers (3.10–3.13).
 requires-python = ">=3.10,<3.14"
 license = {text = "Apache-2.0"}
 authors = [
@@ -125,16 +121,7 @@ speech = ["faster-whisper>=1.0"]
 speech-deepgram = ["deepgram-sdk>=3.0"]
 eval-wandb = ["wandb>=0.17"]
 eval-sheets = ["gspread>=6.0", "google-auth>=2.0"]
-mining-pearl-cpu = [
-    # Pearl Python packages (py-pearl-mining, miner-base, pearl-gateway) are
-    # not on PyPI yet. They are installed at first `mine init` via the
-    # build-from-pin path in src/openjarvis/mining/_install.py:build_from_pin().
-    # When Pearl publishes wheels, replace the line below with version pins.
-    #
-    # The extra remains as a feature-flag namespace so users can run
-    # `uv sync --extra mining-pearl-cpu` to opt-in (it succeeds with no
-    # additional resolution today; the actual install happens on demand).
-]
+mining-pearl-cpu = []
 framework-comparison = ["polars>=1.0"]
 docs = [
     "mkdocs>=1.6",
@@ -188,14 +175,9 @@ select = ["E", "F", "I", "W"]
 [tool.ruff.lint.per-file-ignores]
 "src/openjarvis/evals/datasets/*.py" = ["E501"]
 "src/openjarvis/evals/scorers/*.py" = ["E501"]
-# hybrid/ is research code with long prompt strings and paradigm-specific
-# config dicts — same relaxation as evals research code above. The ``**`` glob
-# also covers subpackages (e.g. hybrid/skillorchestra/), which the prior
-# ``hybrid/*.py`` glob missed.
 "src/openjarvis/agents/hybrid/**/*.py" = ["E501"]
-# research_loop.py carries long prompt strings too (documented in CLAUDE.md);
-# the ignore was missing here.
 "src/openjarvis/agents/research_loop.py" = ["E501"]
+"tests/test_btrades_executive_os*.py" = ["E501", "I001"]
 
 [dependency-groups]
 dev = [
