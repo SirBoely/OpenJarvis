@@ -6,11 +6,16 @@
 # count toward the merge requirement. Non-owners can still leave reviews
 # and comments; their approvals simply do not unblock merge.
 #
-# See: https://docs.github.com/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
-#
-# To add more owners, append GitHub handles (`@username`) or team slugs
-# (`@open-jarvis/<team>`) to the line below. To gate specific paths
-# differently, add a more-specific pattern beneath it (later, more
-# specific rules win).
+# General upstream ownership remains unchanged.
 
 * @jonsaadfalcon @ANarayan @robbym-dev
+
+# Repository-local security boundary. Later, more-specific CODEOWNERS rules
+# take precedence over the global rule above. These paths control CI authority,
+# external skill ingestion and the public security contract.
+/.github/workflows/ @SirBoely
+/.github/dependabot.yml @SirBoely
+/SECURITY.md @SirBoely
+/src/openjarvis/skills/importer.py @SirBoely
+/src/openjarvis/skills/sources/ @SirBoely
+/tests/skills/test_git_source_security.py @SirBoely

@@ -1,12 +1,14 @@
-"""GitHubResolver — generic resolver for any GitHub repo containing skills.
+"""GitHubResolver — generic resolver for GitHub repositories containing skills.
 
-Performs a recursive walk for SKILL.md (or skill.md) files anywhere
-under the cache directory.
+Performs a recursive walk for SKILL.md (or skill.md) files anywhere under the
+cache directory. External repositories are pinned to immutable commits by
+default; mutable branch tracking requires an explicit low-trust override.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from pathlib import Path
 from typing import List
@@ -14,36 +16,104 @@ from typing import List
 import yaml
 
 from openjarvis.skills.sources.base import ResolvedSkill, SourceResolver
+from openjarvis.skills.sources.git_security import (
+    SkillSourceSecurityError,
+    assert_trusted_checkout,
+    normalize_github_https_url,
+    sync_pinned_checkout,
+    validate_full_commit_sha,
+)
 
 LOGGER = logging.getLogger(__name__)
 
 
+def _env_allows_mutable_sources() -> bool:
+    return os.environ.get("OPENJARVIS_ALLOW_MUTABLE_SKILL_SOURCES", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 class GitHubResolver(SourceResolver):
-    """Generic resolver for any GitHub repo containing SKILL.md files."""
+    """Generic resolver for an approved GitHub repo containing SKILL.md files."""
 
     name = "github"
 
-    def __init__(self, cache_root: Path, repo_url: str) -> None:
+    def __init__(
+        self,
+        cache_root: Path,
+        repo_url: str,
+        *,
+        revision: str | None = None,
+        allow_mutable: bool | None = None,
+    ) -> None:
         self._cache_root = Path(cache_root)
-        self._repo_url = repo_url
+        # Store the requested URL verbatim so local list-only/test use remains
+        # possible. Any network synchronization or pinned attestation validates
+        # it through normalize_github_https_url before Git receives it.
+        self._repo_url = repo_url.strip()
+        env_revision = os.environ.get("OPENJARVIS_GITHUB_REVISION", "").strip()
+        self._revision = revision.strip() if revision else env_revision
+        if self._revision:
+            self._revision = validate_full_commit_sha(self._revision)
+        self._allow_mutable = (
+            _env_allows_mutable_sources()
+            if allow_mutable is None
+            else bool(allow_mutable)
+        )
 
     def cache_dir(self) -> Path:
         return self._cache_root
 
     def sync(self) -> None:
+        if self._revision:
+            sync_pinned_checkout(self._cache_root, self._repo_url, self._revision)
+            return
+        if not self._allow_mutable:
+            raise SkillSourceSecurityError(
+                "GitHub skill sync requires a full immutable revision. Set "
+                "OPENJARVIS_GITHUB_REVISION or pass revision=. "
+                "Mutable sync is low-trust and requires explicit "
+                "OPENJARVIS_ALLOW_MUTABLE_SKILL_SOURCES."
+            )
+        self._sync_mutable()
+
+    def _sync_mutable(self) -> None:
+        expected_url = normalize_github_https_url(self._repo_url)
         if self._cache_root.exists() and (self._cache_root / ".git").exists():
+            origin = subprocess.run(
+                ["git", "-C", str(self._cache_root), "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            if normalize_github_https_url(origin) != expected_url:
+                raise SkillSourceSecurityError(
+                    "GitHub skill cache origin does not match policy"
+                )
             subprocess.run(
                 ["git", "-C", str(self._cache_root), "pull", "--ff-only"],
                 check=True,
             )
+        elif self._cache_root.exists():
+            raise SkillSourceSecurityError(
+                "GitHub skill cache path exists but is not a Git checkout"
+            )
         else:
             self._cache_root.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(
-                ["git", "clone", self._repo_url, str(self._cache_root)],
+                ["git", "clone", expected_url, str(self._cache_root)],
                 check=True,
             )
 
     def list_skills(self) -> List[ResolvedSkill]:
+        if self._revision and (self._cache_root / ".git").exists():
+            assert_trusted_checkout(
+                self._cache_root,
+                self._repo_url,
+                self._revision,
+            )
         if not self._cache_root.exists():
             return []
 
@@ -51,10 +121,8 @@ class GitHubResolver(SourceResolver):
         commit = self._read_commit()
         seen_dirs: set[Path] = set()
 
-        # Recursive walk for SKILL.md or skill.md
         for pattern in ("SKILL.md", "skill.md"):
             for skill_md in sorted(self._cache_root.rglob(pattern)):
-                # Skip files inside .git
                 if ".git" in skill_md.parts:
                     continue
                 skill_dir = skill_md.parent
@@ -65,7 +133,6 @@ class GitHubResolver(SourceResolver):
                 name, description = self._read_preview(
                     skill_md, default_name=skill_dir.name
                 )
-                # Use the immediate parent directory of the skill dir as category
                 try:
                     category = skill_dir.parent.relative_to(self._cache_root).as_posix()
                 except ValueError:
