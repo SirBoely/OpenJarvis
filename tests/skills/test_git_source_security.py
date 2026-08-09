@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 
 from openjarvis.skills.sources.git_security import (
     SkillSourceSecurityError,
+    _git_environment,
     assert_trusted_checkout,
     normalize_github_https_url,
     validate_full_commit_sha,
@@ -37,7 +39,13 @@ def _make_attested_repo(tmp_path: Path) -> tuple[Path, str]:
     (repo / "README.md").write_text("trusted\n", encoding="utf-8")
     _git(repo, "add", "README.md")
     _git(repo, "commit", "-m", "initial")
-    _git(repo, "remote", "add", "origin", "https://github.com/example/skills.git")
+    _git(
+        repo,
+        "remote",
+        "add",
+        "origin",
+        "https://github.com/example/skills.git",
+    )
     return repo, _git(repo, "rev-parse", "HEAD")
 
 
@@ -45,9 +53,10 @@ def test_full_commit_sha_required() -> None:
     revision = "A" * 40
     assert validate_full_commit_sha(revision) == "a" * 40
 
-    for mutable_or_ambiguous in ("main", "v1.0.0", "abc1234", "g" * 40, ""):
+    mutable_or_ambiguous = ("main", "v1.0.0", "abc1234", "g" * 40, "")
+    for value in mutable_or_ambiguous:
         with pytest.raises(SkillSourceSecurityError):
-            validate_full_commit_sha(mutable_or_ambiguous)
+            validate_full_commit_sha(value)
 
 
 @pytest.mark.parametrize(
@@ -78,6 +87,30 @@ def test_github_https_url_is_normalized() -> None:
     )
 
 
+def test_git_environment_strips_inherited_execution_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GIT_DIR", "/tmp/attacker-git-dir")
+    monkeypatch.setenv("GIT_WORK_TREE", "/tmp/attacker-work-tree")
+    monkeypatch.setenv("GIT_TEMPLATE_DIR", "/tmp/attacker-template")
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.fsmonitor")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "/tmp/attacker-command")
+
+    env = _git_environment()
+
+    assert "GIT_DIR" not in env
+    assert "GIT_WORK_TREE" not in env
+    assert "GIT_TEMPLATE_DIR" not in env
+    assert "GIT_CONFIG_COUNT" not in env
+    assert "GIT_CONFIG_KEY_0" not in env
+    assert "GIT_CONFIG_VALUE_0" not in env
+    assert env["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert env["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert env["GIT_LFS_SKIP_SMUDGE"] == "1"
+
+
 @pytest.mark.parametrize(
     "resolver_factory",
     [
@@ -104,7 +137,9 @@ def test_external_sync_fails_closed_without_revision(
         resolver.sync()
 
 
-def test_mutable_generic_sync_still_rejects_non_github_url(tmp_path: Path) -> None:
+def test_mutable_generic_sync_still_rejects_non_github_url(
+    tmp_path: Path,
+) -> None:
     resolver = GitHubResolver(
         cache_root=tmp_path / "cache",
         repo_url="file:///tmp/attacker-controlled-repo",
@@ -144,10 +179,15 @@ def test_checkout_attestation_rejects_wrong_head(tmp_path: Path) -> None:
         )
 
 
-def test_checkout_attestation_rejects_untracked_content(tmp_path: Path) -> None:
+def test_checkout_attestation_rejects_untracked_content(
+    tmp_path: Path,
+) -> None:
     repo, revision = _make_attested_repo(tmp_path)
     (repo / "payload.txt").write_text("poisoned\n", encoding="utf-8")
-    with pytest.raises(SkillSourceSecurityError, match="modified, untracked or ignored"):
+    with pytest.raises(
+        SkillSourceSecurityError,
+        match="modified, untracked or ignored",
+    ):
         assert_trusted_checkout(
             repo,
             "https://github.com/example/skills.git",
@@ -163,7 +203,10 @@ def test_checkout_attestation_rejects_ignored_content(tmp_path: Path) -> None:
     revision = _git(repo, "rev-parse", "HEAD")
     (repo / "ignored.txt").write_text("hidden payload\n", encoding="utf-8")
 
-    with pytest.raises(SkillSourceSecurityError, match="modified, untracked or ignored"):
+    with pytest.raises(
+        SkillSourceSecurityError,
+        match="modified, untracked or ignored",
+    ):
         assert_trusted_checkout(
             repo,
             "https://github.com/example/skills.git",
@@ -171,7 +214,9 @@ def test_checkout_attestation_rejects_ignored_content(tmp_path: Path) -> None:
         )
 
 
-def test_checkout_attestation_rejects_symlinked_git_marker(tmp_path: Path) -> None:
+def test_checkout_attestation_rejects_symlinked_git_marker(
+    tmp_path: Path,
+) -> None:
     repo, revision = _make_attested_repo(tmp_path)
     real_git = repo / ".git-real"
     (repo / ".git").rename(real_git)
