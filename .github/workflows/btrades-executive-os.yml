@@ -32,6 +32,6 @@ jobs:
       - name: Compile package
         run: python -m compileall -q btrades_executive_os
       - name: Run focused tests
-        run: pytest -q tests/test_btrades_executive_os.py tests/test_btrades_executive_os_v2.py tests/test_btrades_executive_os_v3.py
+        run: pytest -q tests/test_btrades_executive_os.py tests/test_btrades_executive_os_v2.py tests/test_btrades_executive_os_v3.py tests/test_btrades_executive_os_v4.py
       - name: Import smoke test
-        run: python -c "from btrades_executive_os import ExecutiveTriage, ExecutiveControlPlane, EvidenceRegistry, PromotionController, RevenueAttributionEngine, SupplierSLAScorer, UnitEconomicsEngine, LedgerRouter, KPIDriftDetector, IncidentRemediationEngine, ProjectResourceOptimizer, PMOEvidenceWriter"
+        run: python -c "from btrades_executive_os import ExecutiveTriage, ExecutiveControlPlane, EvidenceRegistry, RevenueAttributionEngine, SKUProfitabilityEngine, DynamicPricingEngine, InventoryReorderEngine, CampaignBudgetAllocator, CohortLTVForecaster, ExperimentationEngine, CustomerSegmentationEngine, SupplierFailoverOrchestrator, ClosedLoopProfitOptimizer"
