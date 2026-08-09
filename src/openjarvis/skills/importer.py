@@ -88,7 +88,9 @@ class SkillImporter:
         # would let an untrusted skill source read content outside its checkout.
         if resolved.path.is_symlink():
             result.success = False
-            result.warnings.append("Unsafe skill source: skill root must not be a symlink")
+            result.warnings.append(
+                "Unsafe skill source: skill root must not be a symlink"
+            )
             return result
 
         source_md = resolved.path / "SKILL.md"
