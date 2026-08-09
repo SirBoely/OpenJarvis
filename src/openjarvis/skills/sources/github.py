@@ -73,8 +73,9 @@ class GitHubResolver(SourceResolver):
         if not self._allow_mutable:
             raise SkillSourceSecurityError(
                 "GitHub skill sync requires a full immutable revision. Set "
-                "OPENJARVIS_GITHUB_REVISION or pass revision=. Mutable sync is "
-                "low-trust and requires explicit OPENJARVIS_ALLOW_MUTABLE_SKILL_SOURCES."
+                "OPENJARVIS_GITHUB_REVISION or pass revision=. "
+                "Mutable sync is low-trust and requires explicit "
+                "OPENJARVIS_ALLOW_MUTABLE_SKILL_SOURCES."
             )
         self._sync_mutable()
 
