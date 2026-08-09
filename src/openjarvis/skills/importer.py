@@ -83,14 +83,15 @@ class SkillImporter:
             )
             return result
 
-        # 1. Parse source SKILL.md.  The skill root and manifest must be real
-        # filesystem entries rather than symlinks: following a symlink here
-        # would let an untrusted skill source read content outside its checkout.
-        if resolved.path.is_symlink():
+        # 1. Validate the source path before reading anything. A skill directory
+        # can itself be a regular directory while one of its lexical ancestors
+        # is a symlink. Reject every symlink from the checkout trust anchor to
+        # the skill so external repositories cannot escape their cache root.
+        try:
+            self._validate_source_path(resolved.path)
+        except ValueError as exc:
             result.success = False
-            result.warnings.append(
-                "Unsafe skill source: skill root must not be a symlink"
-            )
+            result.warnings.append(f"Unsafe skill source: {exc}")
             return result
 
         source_md = resolved.path / "SKILL.md"
@@ -175,6 +176,42 @@ class SkillImporter:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_source_path(skill_path: Path) -> None:
+        """Reject a skill path that traverses symlinks before its manifest.
+
+        The nearest lexical ancestor containing ``.git`` is treated as the
+        upstream checkout trust anchor. If no Git anchor is available, the
+        check falls back to the whole lexical path and remains fail-closed.
+        """
+        if not skill_path.exists() or not skill_path.is_dir():
+            raise ValueError("skill root must be an existing directory")
+
+        candidates = (skill_path, *skill_path.parents)
+        checkout_root: Path | None = None
+        for candidate in candidates:
+            git_marker = candidate / ".git"
+            if git_marker.exists() or git_marker.is_symlink():
+                checkout_root = candidate
+                break
+
+        if checkout_root is None:
+            path_chain = tuple(reversed(candidates))
+        else:
+            relative = skill_path.relative_to(checkout_root)
+            current = checkout_root
+            chain = [current]
+            for part in relative.parts:
+                current = current / part
+                chain.append(current)
+            path_chain = tuple(chain)
+
+        for candidate in path_chain:
+            if candidate.is_symlink():
+                raise ValueError(
+                    "symlinked path component is not allowed in skill source"
+                )
 
     @staticmethod
     def _validate_copy_tree(root: Path) -> None:
