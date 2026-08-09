@@ -49,7 +49,10 @@ class GitHubResolver(SourceResolver):
         allow_mutable: bool | None = None,
     ) -> None:
         self._cache_root = Path(cache_root)
-        self._repo_url = normalize_github_https_url(repo_url)
+        # Store the requested URL verbatim so local list-only/test use remains
+        # possible. Any network synchronization or pinned attestation validates
+        # it through normalize_github_https_url before Git receives it.
+        self._repo_url = repo_url.strip()
         env_revision = os.environ.get("OPENJARVIS_GITHUB_REVISION", "").strip()
         self._revision = revision.strip() if revision else env_revision
         if self._revision:
@@ -76,6 +79,7 @@ class GitHubResolver(SourceResolver):
         self._sync_mutable()
 
     def _sync_mutable(self) -> None:
+        expected_url = normalize_github_https_url(self._repo_url)
         if self._cache_root.exists() and (self._cache_root / ".git").exists():
             origin = subprocess.run(
                 ["git", "-C", str(self._cache_root), "remote", "get-url", "origin"],
@@ -83,7 +87,7 @@ class GitHubResolver(SourceResolver):
                 text=True,
                 check=True,
             ).stdout.strip()
-            if normalize_github_https_url(origin) != self._repo_url:
+            if normalize_github_https_url(origin) != expected_url:
                 raise SkillSourceSecurityError(
                     "GitHub skill cache origin does not match policy"
                 )
@@ -98,7 +102,7 @@ class GitHubResolver(SourceResolver):
         else:
             self._cache_root.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(
-                ["git", "clone", self._repo_url, str(self._cache_root)],
+                ["git", "clone", expected_url, str(self._cache_root)],
                 check=True,
             )
 
