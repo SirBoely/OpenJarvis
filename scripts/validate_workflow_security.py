@@ -34,15 +34,14 @@ for path in sorted((*WORKFLOW_DIR.glob("*.yml"), *WORKFLOW_DIR.glob("*.yaml"))):
         for forbidden in FORBIDDEN_WITH_UNTRUSTED_INPUT:
             if forbidden in lowered:
                 errors.append(
-                    f"{path}: untrusted public trigger cannot be combined with {forbidden}"
+                    f"{path}: untrusted public trigger uses forbidden authority"
                 )
 
         secret_names = {match.upper() for match in SECRET_PATTERN.findall(text)}
         external_secrets = secret_names - {"GITHUB_TOKEN"}
         if external_secrets:
             errors.append(
-                f"{path}: untrusted public trigger references external secrets: "
-                + ", ".join(sorted(external_secrets))
+                f"{path}: untrusted public trigger references an external secret"
             )
 
 if errors:
