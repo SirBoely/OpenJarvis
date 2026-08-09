@@ -83,7 +83,14 @@ class SkillImporter:
             )
             return result
 
-        # 1. Parse source SKILL.md
+        # 1. Parse source SKILL.md.  The skill root and manifest must be real
+        # filesystem entries rather than symlinks: following a symlink here
+        # would let an untrusted skill source read content outside its checkout.
+        if resolved.path.is_symlink():
+            result.success = False
+            result.warnings.append("Unsafe skill source: skill root must not be a symlink")
+            return result
+
         source_md = resolved.path / "SKILL.md"
         if not source_md.exists():
             source_md = resolved.path / "skill.md"
@@ -91,6 +98,12 @@ class SkillImporter:
                 result.success = False
                 result.warnings.append(f"No SKILL.md found in {resolved.path}")
                 return result
+        if source_md.is_symlink() or not source_md.is_file():
+            result.success = False
+            result.warnings.append(
+                "Unsafe skill source: SKILL.md must be a regular non-symlink file"
+            )
+            return result
 
         try:
             frontmatter, body = self._read_skill_md(source_md)
@@ -98,6 +111,23 @@ class SkillImporter:
         except Exception as exc:
             result.success = False
             result.warnings.append(f"Parse error: {exc}")
+            return result
+
+        # Validate everything that may be copied before touching an existing
+        # installation.  shutil.copytree follows symlinks by default; rejecting
+        # symlinks and special filesystem objects prevents local-file disclosure
+        # and device/FIFO surprises from a malicious skill repository.
+        try:
+            for subdir in COPIED_SUBDIRS:
+                src_sub = resolved.path / subdir
+                if src_sub.exists() or src_sub.is_symlink():
+                    self._validate_copy_tree(src_sub)
+            scripts_src = resolved.path / "scripts"
+            if with_scripts and (scripts_src.exists() or scripts_src.is_symlink()):
+                self._validate_copy_tree(scripts_src)
+        except ValueError as exc:
+            result.success = False
+            result.warnings.append(f"Unsafe skill source: {exc}")
             return result
 
         # 2. Translate tool references
@@ -143,6 +173,27 @@ class SkillImporter:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_copy_tree(root: Path) -> None:
+        """Reject symlinks and special filesystem entries below *root*.
+
+        External skill repositories are untrusted input.  Only ordinary
+        directories and regular files may cross the import boundary.
+        """
+        if root.is_symlink():
+            raise ValueError(f"{root.name}/ must not be a symlink")
+        if not root.is_dir():
+            raise ValueError(f"{root.name}/ must be a regular directory")
+        for candidate in root.rglob("*"):
+            if candidate.is_symlink():
+                raise ValueError(
+                    f"symlink is not allowed in imported skill content: {candidate}"
+                )
+            if not candidate.is_dir() and not candidate.is_file():
+                raise ValueError(
+                    f"special filesystem entry is not allowed: {candidate}"
+                )
 
     def _read_skill_md(self, path: Path) -> tuple[dict, str]:
         """Parse a SKILL.md file into (frontmatter dict, markdown body)."""
