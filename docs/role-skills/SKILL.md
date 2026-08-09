@@ -1,3 +1,8 @@
+---
+name: b-trades-openjarvis-role-skill-profile
+description: Federated B-Trades AGENT venue contract for OpenJarvis role routing, capability verification, security, release control, and independent evaluation.
+---
+
 # OpenJarvis Role-Skill Contract
 
 OpenJarvis is the AGENT venue in the federated B-Trades role-skill architecture.
@@ -13,7 +18,7 @@ OpenJarvis is the AGENT venue in the federated B-Trades role-skill architecture.
 - telemetry/performance: SKILL-030 + SKILL-037
 - prompt/context/resource optimization: SKILL-042 + SKILL-043 + SKILL-044
 - conversational/realtime channels: SKILL-046 + SKILL-049
-- CI/release: SKILL-041 + SKILL-045 + SKILL-050
+- CI/release: SKILL-025 + SKILL-041 + SKILL-045 + SKILL-050
 
 ## Capability rule
 Optional extras, live channels, cloud providers, Docker/GPU paths and external credentials are capabilities that must be discovered and validated in the active environment. Their presence is never inferred from `pyproject.toml` alone.
