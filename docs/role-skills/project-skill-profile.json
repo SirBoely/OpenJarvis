@@ -1,0 +1,24 @@
+{
+  "schema_version": "btrades.project-role-profile.v1",
+  "venue_id": "AGENT-OPENJARVIS",
+  "repository": "SirBoely/OpenJarvis",
+  "venue_type": "AGENT",
+  "canonical_registry": "SirBoely/b-trades-command-center-49:docs/role-skills/role_based_skills_50.json",
+  "policy": {
+    "fail_closed": true,
+    "independent_verifier_required": true,
+    "runtime_capability_verification": true,
+    "no_live_external_assumption": true
+  },
+  "required_skills": ["SKILL-005","SKILL-025","SKILL-035","SKILL-041","SKILL-050"],
+  "domain_skills": ["SKILL-012","SKILL-016","SKILL-017","SKILL-019","SKILL-030","SKILL-033","SKILL-034","SKILL-037","SKILL-042","SKILL-043","SKILL-044","SKILL-045","SKILL-046","SKILL-049"],
+  "bindings": {
+    "agent_orchestration": ["SKILL-005","SKILL-012","SKILL-050"],
+    "tool_and_provider_adapters": ["SKILL-016","SKILL-035","SKILL-045"],
+    "memory_and_data": ["SKILL-017","SKILL-019","SKILL-033"],
+    "telemetry_and_performance": ["SKILL-030","SKILL-037"],
+    "prompt_resource_optimization": ["SKILL-042","SKILL-043","SKILL-044"],
+    "channels_and_realtime": ["SKILL-046","SKILL-049"],
+    "secrets_and_release": ["SKILL-034","SKILL-035","SKILL-041","SKILL-045"]
+  }
+}
