@@ -10,11 +10,18 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Default-deny the workflow token. Individual jobs in this workflow only need
+# to read the checked-out repository.
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -34,6 +41,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -80,25 +89,16 @@ jobs:
           path: coverage.xml
           if-no-files-found: warn
 
-  # Windows job — empirically exercises the platform-specific code paths that
-  # the Ubuntu `test` job can never reach: GlobalMemoryStatusEx RAM detection
-  # (#373) and the cp9xx -> UTF-8 stdout reconfigure (#293). Also the only CI
-  # job that builds + imports the mandatory `openjarvis_rust` PyO3 extension
-  # on Windows. Public repo -> Windows runner minutes are free.
-  #
-  # All `run:` steps use static commands only (no `github.event.*`
-  # interpolation), so there is no workflow-injection surface here.
   test-windows:
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        # 3.12 = common; 3.13 = the supported ceiling — installing there guards
-        # against a numpy/native wheel gap at the top of the range (#350), which
-        # is exactly how the source-build failure slips in on Windows.
         python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -111,8 +111,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev --extra server
 
-      # Pure-Python check — runs before the Rust build so a flaky toolchain
-      # install can never mask the actual RAM-detection verification.
       - name: Verify Windows RAM detection (#373)
         shell: bash
         run: |
@@ -144,6 +142,8 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
