@@ -13,6 +13,9 @@ on:
 permissions:
   actions: read
   contents: read
+  # Required by the immutable Google reusable-workflow contract. SARIF upload
+  # remains disabled below, so this grants no repository/source write authority.
+  security-events: write
 
 jobs:
   osv-pr-scan:
@@ -26,3 +29,4 @@ jobs:
     permissions:
       actions: read
       contents: read
+      security-events: write
