@@ -10,14 +10,22 @@ from .core import (
     ResourceManagementSystem,
     TrustGovernanceOperationsLeader,
 )
+from .control_plane import ExecutiveControlPlane, PromotionController, PromotionDecision
+from .evidence import ContextPackBuilder, EvidenceRecord, EvidenceRegistry
 
 __all__ = [
     "AnalyticsAgent",
     "BusinessIntelligenceCapitalLeader",
+    "ContextPackBuilder",
+    "EvidenceRecord",
+    "EvidenceRegistry",
+    "ExecutiveControlPlane",
     "ExecutiveTriage",
     "GoalTrackingAgent",
     "GrowthEngineeringLeader",
     "OperationsAgent",
+    "PromotionController",
+    "PromotionDecision",
     "ResourceManagementSystem",
     "TrustGovernanceOperationsLeader",
 ]
