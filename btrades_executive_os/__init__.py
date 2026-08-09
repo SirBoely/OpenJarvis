@@ -12,9 +12,21 @@ from .core import (
 )
 from .control_plane import ExecutiveControlPlane, PromotionController, PromotionDecision
 from .evidence import ContextPackBuilder, EvidenceRecord, EvidenceRegistry
+from .revenue_ops import (
+    AttributionResult,
+    IncidentRemediationEngine,
+    KPIDriftDetector,
+    LedgerRouter,
+    PMOEvidenceWriter,
+    ProjectResourceOptimizer,
+    RevenueAttributionEngine,
+    SupplierSLAScorer,
+    UnitEconomicsEngine,
+)
 
 __all__ = [
     "AnalyticsAgent",
+    "AttributionResult",
     "BusinessIntelligenceCapitalLeader",
     "ContextPackBuilder",
     "EvidenceRecord",
@@ -23,9 +35,17 @@ __all__ = [
     "ExecutiveTriage",
     "GoalTrackingAgent",
     "GrowthEngineeringLeader",
+    "IncidentRemediationEngine",
+    "KPIDriftDetector",
+    "LedgerRouter",
     "OperationsAgent",
+    "PMOEvidenceWriter",
+    "ProjectResourceOptimizer",
     "PromotionController",
     "PromotionDecision",
     "ResourceManagementSystem",
+    "RevenueAttributionEngine",
+    "SupplierSLAScorer",
     "TrustGovernanceOperationsLeader",
+    "UnitEconomicsEngine",
 ]
