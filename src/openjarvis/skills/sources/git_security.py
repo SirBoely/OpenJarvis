@@ -57,7 +57,11 @@ def normalize_github_https_url(repo_url: str) -> str:
     if path.endswith(".git"):
         path = path[:-4]
     parts = path.split("/") if path else []
-    if len(parts) != 2 or not all(_GITHUB_COMPONENT_RE.fullmatch(p) for p in parts):
+    if (
+        len(parts) != 2
+        or any(part in {".", ".."} for part in parts)
+        or not all(_GITHUB_COMPONENT_RE.fullmatch(part) for part in parts)
+    ):
         raise SkillSourceSecurityError(
             "repository URL must identify exactly one GitHub owner/repository"
         )
@@ -139,8 +143,8 @@ def assert_trusted_checkout(
 def sync_pinned_checkout(cache_root: Path, repo_url: str, revision: str) -> None:
     """Synchronize a cache to one approved immutable commit and attest it.
 
-    The cache is disposable. Existing tracked/untracked data are reset before
-    attestation so stale local content cannot silently survive a sync.
+    The cache is disposable. Existing tracked, untracked and ignored data are
+    reset before attestation so stale local content cannot silently survive.
     """
     normalized_url = normalize_github_https_url(repo_url)
     normalized_revision = validate_full_commit_sha(revision)
@@ -176,7 +180,7 @@ def sync_pinned_checkout(cache_root: Path, repo_url: str, revision: str) -> None
         _run_git(cache_root, "fetch", "--no-tags", "--prune", "origin", normalized_revision)
         _run_git(cache_root, "checkout", "--detach", "--force", normalized_revision)
         _run_git(cache_root, "reset", "--hard", normalized_revision)
-        _run_git(cache_root, "clean", "-ffd")
+        _run_git(cache_root, "clean", "-ffdx")
     except subprocess.CalledProcessError as exc:
         raise SkillSourceSecurityError(
             "unable to synchronize approved immutable skill revision"
