@@ -1,0 +1,27 @@
+name: Role Skill Profile Gate
+
+on:
+  pull_request:
+    paths:
+      - 'docs/role-skills/**'
+      - 'scripts/validate_role_skill_profile.py'
+      - '.github/workflows/role-skill-profile-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/role-skills/**'
+      - 'scripts/validate_role_skill_profile.py'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/validate_role_skill_profile.py
