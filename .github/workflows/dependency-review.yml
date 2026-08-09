@@ -3,30 +3,65 @@ name: Dependency Vulnerability Gate
 on:
   pull_request:
     branches: [main]
-  merge_group:
-    branches: [main]
 
-# GitHub Dependency Review requires the repository Dependency Graph, which is
-# not currently enabled. Keep an enforceable vulnerability gate independent of
-# that repository feature. The official OSV reusable PR workflow compares base
-# and head and fails when the PR introduces new known vulnerabilities.
+# GitHub native Dependency Review remains a desired defense-in-depth control,
+# but it requires Dependency Graph to be enabled at repository level. This
+# gate remains independently enforceable and compares the exact base/head
+# dependency state with OSV-Scanner.
 permissions:
-  actions: read
   contents: read
-  # Required by the immutable Google reusable-workflow contract. SARIF upload
-  # remains disabled below, so this grants no repository/source write authority.
-  security-events: write
 
 jobs:
   osv-pr-scan:
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@3adb4b14a2b0623876d18d863a498b785fb3752d # v2.3.8
-    with:
-      upload-sarif: false
-      fail-on-vuln: true
-      scan-args: |-
-        --recursive
-        ./
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      OSV_IMAGE: ghcr.io/google/osv-scanner-action@sha256:48406c58197201fe55e56615ad9d414f85063da320e204d0b0ed460fb3908dba
+    steps:
+      - name: Checkout full PR history without persisted credentials
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Pull immutable OSV-Scanner image
+        run: docker pull "$OSV_IMAGE"
+
+      - name: Scan dependency baseline
+        continue-on-error: true
+        run: |
+          git checkout --force "$BASE_SHA"
+          docker run --rm \
+            -v "$PWD:/github/workspace" \
+            -w /github/workspace \
+            "$OSV_IMAGE" \
+            --format=json \
+            --output=old-results.json \
+            --recursive ./
+
+      - name: Scan PR dependency state
+        continue-on-error: true
+        run: |
+          git checkout --force "$HEAD_SHA"
+          docker run --rm \
+            -v "$PWD:/github/workspace" \
+            -w /github/workspace \
+            "$OSV_IMAGE" \
+            --format=json \
+            --output=new-results.json \
+            --recursive ./
+
+      - name: Fail on newly introduced vulnerabilities
+        run: |
+          docker run --rm \
+            --entrypoint /root/osv-reporter \
+            -v "$PWD:/github/workspace" \
+            -w /github/workspace \
+            "$OSV_IMAGE" \
+            --output=results.sarif \
+            --old=old-results.json \
+            --new=new-results.json \
+            --gh-annotations=true \
+            --fail-on-vuln=true
