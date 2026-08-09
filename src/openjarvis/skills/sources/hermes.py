@@ -73,8 +73,9 @@ class HermesResolver(SourceResolver):
         if not self._allow_mutable:
             raise SkillSourceSecurityError(
                 "Hermes sync requires a full immutable revision. Set "
-                "OPENJARVIS_HERMES_REVISION or pass revision=. Mutable sync is "
-                "low-trust and requires explicit OPENJARVIS_ALLOW_MUTABLE_SKILL_SOURCES."
+                "OPENJARVIS_HERMES_REVISION or pass revision=. "
+                "Mutable sync is low-trust and requires explicit "
+                "OPENJARVIS_ALLOW_MUTABLE_SKILL_SOURCES."
             )
         self._sync_mutable()
 
@@ -88,7 +89,9 @@ class HermesResolver(SourceResolver):
                 check=True,
             ).stdout.strip()
             if normalize_github_https_url(origin) != expected_url:
-                raise SkillSourceSecurityError("Hermes cache origin does not match policy")
+                raise SkillSourceSecurityError(
+                    "Hermes cache origin does not match policy"
+                )
             subprocess.run(
                 ["git", "-C", str(self._cache_root), "pull", "--ff-only"],
                 check=True,
