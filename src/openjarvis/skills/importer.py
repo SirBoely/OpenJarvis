@@ -83,7 +83,17 @@ class SkillImporter:
             )
             return result
 
-        # 1. Parse source SKILL.md
+        # 1. Validate the source path before reading anything. A skill directory
+        # can itself be a regular directory while one of its lexical ancestors
+        # is a symlink. Reject every symlink from the checkout trust anchor to
+        # the skill so external repositories cannot escape their cache root.
+        try:
+            self._validate_source_path(resolved.path)
+        except ValueError as exc:
+            result.success = False
+            result.warnings.append(f"Unsafe skill source: {exc}")
+            return result
+
         source_md = resolved.path / "SKILL.md"
         if not source_md.exists():
             source_md = resolved.path / "skill.md"
@@ -91,6 +101,12 @@ class SkillImporter:
                 result.success = False
                 result.warnings.append(f"No SKILL.md found in {resolved.path}")
                 return result
+        if source_md.is_symlink() or not source_md.is_file():
+            result.success = False
+            result.warnings.append(
+                "Unsafe skill source: SKILL.md must be a regular non-symlink file"
+            )
+            return result
 
         try:
             frontmatter, body = self._read_skill_md(source_md)
@@ -98,6 +114,23 @@ class SkillImporter:
         except Exception as exc:
             result.success = False
             result.warnings.append(f"Parse error: {exc}")
+            return result
+
+        # Validate everything that may be copied before touching an existing
+        # installation.  shutil.copytree follows symlinks by default; rejecting
+        # symlinks and special filesystem objects prevents local-file disclosure
+        # and device/FIFO surprises from a malicious skill repository.
+        try:
+            for subdir in COPIED_SUBDIRS:
+                src_sub = resolved.path / subdir
+                if src_sub.exists() or src_sub.is_symlink():
+                    self._validate_copy_tree(src_sub)
+            scripts_src = resolved.path / "scripts"
+            if with_scripts and (scripts_src.exists() or scripts_src.is_symlink()):
+                self._validate_copy_tree(scripts_src)
+        except ValueError as exc:
+            result.success = False
+            result.warnings.append(f"Unsafe skill source: {exc}")
             return result
 
         # 2. Translate tool references
@@ -143,6 +176,63 @@ class SkillImporter:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_source_path(skill_path: Path) -> None:
+        """Reject a skill path that traverses symlinks before its manifest.
+
+        The nearest lexical ancestor containing ``.git`` is treated as the
+        upstream checkout trust anchor. If no Git anchor is available, the
+        check falls back to the whole lexical path and remains fail-closed.
+        """
+        if not skill_path.exists() or not skill_path.is_dir():
+            raise ValueError("skill root must be an existing directory")
+
+        candidates = (skill_path, *skill_path.parents)
+        checkout_root: Path | None = None
+        for candidate in candidates:
+            git_marker = candidate / ".git"
+            if git_marker.exists() or git_marker.is_symlink():
+                checkout_root = candidate
+                break
+
+        if checkout_root is None:
+            path_chain = tuple(reversed(candidates))
+        else:
+            relative = skill_path.relative_to(checkout_root)
+            current = checkout_root
+            chain = [current]
+            for part in relative.parts:
+                current = current / part
+                chain.append(current)
+            path_chain = tuple(chain)
+
+        for candidate in path_chain:
+            if candidate.is_symlink():
+                raise ValueError(
+                    "symlinked path component is not allowed in skill source"
+                )
+
+    @staticmethod
+    def _validate_copy_tree(root: Path) -> None:
+        """Reject symlinks and special filesystem entries below *root*.
+
+        External skill repositories are untrusted input.  Only ordinary
+        directories and regular files may cross the import boundary.
+        """
+        if root.is_symlink():
+            raise ValueError(f"{root.name}/ must not be a symlink")
+        if not root.is_dir():
+            raise ValueError(f"{root.name}/ must be a regular directory")
+        for candidate in root.rglob("*"):
+            if candidate.is_symlink():
+                raise ValueError(
+                    f"symlink is not allowed in imported skill content: {candidate}"
+                )
+            if not candidate.is_dir() and not candidate.is_file():
+                raise ValueError(
+                    f"special filesystem entry is not allowed: {candidate}"
+                )
 
     def _read_skill_md(self, path: Path) -> tuple[dict, str]:
         """Parse a SKILL.md file into (frontmatter dict, markdown body)."""
