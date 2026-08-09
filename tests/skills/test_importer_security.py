@@ -41,6 +41,36 @@ def _skill_root(tmp_path: Path) -> Path:
     return src
 
 
+def test_rejects_symlinked_ancestor_within_checkout(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / ".git").mkdir()
+
+    outside_category = tmp_path / "outside-category"
+    skill = outside_category / "secure-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: secure-skill\ndescription: Outside\n---\nBody\n",
+        encoding="utf-8",
+    )
+
+    linked_category = checkout / "category"
+    try:
+        linked_category.symlink_to(outside_category, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available on this platform")
+
+    resolved_path = linked_category / "secure-skill"
+    assert resolved_path.is_symlink() is False
+
+    target_root = tmp_path / "installed"
+    result = _importer(target_root).import_skill(_resolved(resolved_path))
+
+    assert result.success is False
+    assert any("symlink" in warning.lower() for warning in result.warnings)
+    assert not (target_root / "github" / "secure-skill").exists()
+
+
 def test_rejects_symlink_in_always_copied_content(tmp_path: Path) -> None:
     src = _skill_root(tmp_path)
     outside = tmp_path / "private.txt"
