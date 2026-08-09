@@ -11,7 +11,9 @@ Security-sensitive deployments should apply least privilege and keep credentials
 - Skill scripts are not imported unless the operator explicitly opts in.
 - Imported skill filesystem content must consist only of regular files and directories; symlinks and special filesystem entries are rejected.
 - External Git-backed sources are **immutable by default**. Network synchronization requires a reviewed full 40-character commit SHA.
-- Pinned caches are attested before use: the configured GitHub origin, checkout HEAD, and clean worktree must all match policy.
+- Pinned synchronization is staged in a new disposable Git checkout; an existing cache is not used as the Git execution root for refresh.
+- The pinned Git path suppresses inherited user/system Git configuration, hooks, fsmonitor, interactive credential prompts, and Git-LFS smudging before checkout.
+- Pinned caches are attested before use: the configured GitHub origin, checkout HEAD, and clean tracked/untracked/ignored worktree must all match policy.
 - External repository URLs used for synchronization must be HTTPS GitHub repository URLs without embedded credentials, query strings, fragments, or alternate protocols.
 - Treat `SKILL.md`, references, templates, assets, few-shot examples, learning overlays, and retrieved text as potentially adversarial instructions or data.
 - Do not grant an imported skill credentials or write-capable tools solely because it parses successfully.
@@ -54,4 +56,4 @@ Use GitHub's private vulnerability reporting / security advisory mechanism for t
 
 ## Dependency and CI security
 
-Dependency update monitoring is configured for GitHub Actions, Python/uv, and Rust/Cargo. Security-sensitive deployments should pin third-party GitHub Actions and external skill sources to reviewed immutable revisions and revalidate them before promotion.
+Dependency update monitoring is configured for GitHub Actions, Python/uv, and Rust/Cargo. Pull requests are additionally subject to dependency review. Security-sensitive deployments should pin third-party GitHub Actions and external skill sources to reviewed immutable revisions and revalidate them before promotion.
