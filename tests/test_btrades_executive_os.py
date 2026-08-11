@@ -10,7 +10,15 @@ from btrades_executive_os.core import (
 
 
 def test_analytics_agent_metrics():
-    result = AnalyticsAgent().analyze({"revenue": 1000, "cost": 600, "orders": 20, "sessions": 400, "returns": 1})
+    result = AnalyticsAgent().analyze(
+        {
+            "revenue": 1000,
+            "cost": 600,
+            "orders": 20,
+            "sessions": 400,
+            "returns": 1,
+        }
+    )
     assert result["gross_profit"] == 400
     assert result["margin_pct"] == 40
     assert result["aov"] == 50
@@ -19,31 +27,49 @@ def test_analytics_agent_metrics():
 
 
 def test_goal_tracking_flags_underperformance():
-    result = GoalTrackingAgent().score([Goal("revenue", 100, 90), Goal("evidence", 100, 70)])
+    result = GoalTrackingAgent().score(
+        [Goal("revenue", 100, 90), Goal("evidence", 100, 70)]
+    )
     assert result["status"] == "AT_RISK"
     assert "evidence" in result["at_risk"]
 
 
 def test_resource_manager_preserves_reserve():
-    result = ResourceManagementSystem().allocate(1000, {"ads": 600, "rd": 600}, reserve_ratio=0.25)
+    result = ResourceManagementSystem().allocate(
+        1000, {"ads": 600, "rd": 600}, reserve_ratio=0.25
+    )
     assert round(result["ads"] + result["rd"], 2) == 750
     assert result["reserve"] == 250
 
 
 def test_bookkeeping_gap_detection():
-    tasks = ResourceManagementSystem().bookkeeping_tasks([
-        {"id": "t1", "receipt_id": None, "category": None, "reconcile": False}
-    ])
-    assert {t["type"] for t in tasks} == {"missing_receipt", "uncategorized_transaction", "reconciliation_required"}
+    tasks = ResourceManagementSystem().bookkeeping_tasks(
+        [{"id": "t1", "receipt_id": None, "category": None, "reconcile": False}]
+    )
+    assert {t["type"] for t in tasks} == {
+        "missing_receipt",
+        "uncategorized_transaction",
+        "reconciliation_required",
+    }
 
 
 def test_operations_green_path_runs_canary():
-    state = {"payment_gate": "PASS", "supplier_gate": "PASS", "fulfilment_gate": "PASS", "legal_gate": "PASS"}
+    state = {
+        "payment_gate": "PASS",
+        "supplier_gate": "PASS",
+        "fulfilment_gate": "PASS",
+        "legal_gate": "PASS",
+    }
     assert OperationsAgent().triage(state) == ["run_sales_canary"]
 
 
 def test_operations_blocks_on_legal_gap():
-    state = {"payment_gate": "PASS", "supplier_gate": "PASS", "fulfilment_gate": "PASS", "legal_gate": "FAIL"}
+    state = {
+        "payment_gate": "PASS",
+        "supplier_gate": "PASS",
+        "fulfilment_gate": "PASS",
+        "legal_gate": "FAIL",
+    }
     assert "hold_launch_for_compliance_review" in OperationsAgent().triage(state)
 
 
