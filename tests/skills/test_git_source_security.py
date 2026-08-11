@@ -22,7 +22,7 @@ from openjarvis.skills.sources.openclaw import OpenClawResolver
 
 def _git(repo: Path, *args: str) -> str:
     result = subprocess.run(
-        ["git", "-C", str(repo), *args],
+        ["git", "-C", os.fspath(repo), *args],
         check=True,
         capture_output=True,
         text=True,
