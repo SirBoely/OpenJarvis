@@ -32,6 +32,10 @@ jobs:
       - name: Compile package
         run: python -m compileall -q btrades_executive_os
       - name: Run focused tests
-        run: pytest -q tests/test_btrades_executive_os.py
+        env:
+          PYTHONPATH: src:.
+        run: python -m pytest -q tests/test_btrades_executive_os.py
       - name: Import smoke test
+        env:
+          PYTHONPATH: src:.
         run: python -c "from btrades_executive_os import ExecutiveTriage, AnalyticsAgent, OperationsAgent, GoalTrackingAgent, ResourceManagementSystem"
