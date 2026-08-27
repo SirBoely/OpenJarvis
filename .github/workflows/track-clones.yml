@@ -23,16 +23,22 @@ jobs:
           GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN || github.token }}
         run: |
           set -uo pipefail
-          http_code="$(gh api -i repos/${{ github.repository }}/traffic/clones 2>/tmp/traffic-error.txt | awk '/^HTTP\// {code=$2} END {print code}')"
-          if [ "$http_code" = "200" ]; then
-            gh api repos/${{ github.repository }}/traffic/clones > /tmp/traffic.json
+          set +e
+          gh api repos/${{ github.repository }}/traffic/clones > /tmp/traffic.json 2>/tmp/traffic-error.txt
+          api_status=$?
+          set -e
+
+          if [ "$api_status" -eq 0 ] && jq -e '.clones | type == "array"' /tmp/traffic.json >/dev/null 2>&1; then
             echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "CLONE_TRAFFIC_FETCH=PASS"
             exit 0
           fi
 
           echo "available=false" >> "$GITHUB_OUTPUT"
-          echo "::warning title=Clone traffic unavailable::GitHub traffic API returned HTTP ${http_code:-unknown}. Configure repository secret TRAFFIC_TOKEN with push access to collect clone metrics. Existing accumulated data is preserved."
+          echo "::warning title=Clone traffic unavailable::GitHub traffic API is unavailable to the current token. Configure repository secret TRAFFIC_TOKEN with the required repository access to collect clone metrics. Existing accumulated data is preserved."
           cat /tmp/traffic-error.txt || true
+          echo "CLONE_TRAFFIC_FETCH=DEGRADED_PRESERVED"
+          exit 0
 
       - name: Update accumulated data
         if: steps.traffic.outputs.available == 'true'
