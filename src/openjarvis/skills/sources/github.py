@@ -108,7 +108,9 @@ class GitHubResolver(SourceResolver):
             )
 
     def list_skills(self) -> List[ResolvedSkill]:
-        if self._revision and (self._cache_root / ".git").exists():
+        # A pinned cache that exists must always be attestable. Missing `.git`
+        # is a trust failure, not a signal to silently enumerate its contents.
+        if self._revision and self._cache_root.exists():
             assert_trusted_checkout(
                 self._cache_root,
                 self._repo_url,
