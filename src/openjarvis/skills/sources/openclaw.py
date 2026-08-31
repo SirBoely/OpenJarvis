@@ -112,7 +112,7 @@ class OpenClawResolver(SourceResolver):
             )
 
     def list_skills(self) -> List[ResolvedSkill]:
-        if self._revision and (self._cache_root / ".git").exists():
+        if self._revision and self._cache_root.exists():
             assert_trusted_checkout(
                 self._cache_root,
                 OPENCLAW_REPO_URL,
