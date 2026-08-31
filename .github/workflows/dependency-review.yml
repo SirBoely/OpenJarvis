@@ -32,36 +32,44 @@ jobs:
       - name: Scan dependency baseline
         continue-on-error: true
         run: |
+          set -euo pipefail
           git checkout --force "$BASE_SHA"
+          rm -f "$RUNNER_TEMP/osv-base.json"
           docker run --rm \
-            -v "$PWD:/github/workspace" \
+            -v "$PWD:/github/workspace:ro" \
+            -v "$RUNNER_TEMP:/scan-results" \
             -w /github/workspace \
             "$OSV_IMAGE" \
             --format=json \
-            --output=old-results.json \
+            --output=/scan-results/osv-base.json \
             --recursive ./
 
       - name: Scan PR dependency state
         continue-on-error: true
         run: |
+          set -euo pipefail
           git checkout --force "$HEAD_SHA"
+          rm -f "$RUNNER_TEMP/osv-head.json"
           docker run --rm \
-            -v "$PWD:/github/workspace" \
+            -v "$PWD:/github/workspace:ro" \
+            -v "$RUNNER_TEMP:/scan-results" \
             -w /github/workspace \
             "$OSV_IMAGE" \
             --format=json \
-            --output=new-results.json \
+            --output=/scan-results/osv-head.json \
             --recursive ./
 
       - name: Fail on newly introduced vulnerabilities
         run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/osv-base.json"
+          test -s "$RUNNER_TEMP/osv-head.json"
           docker run --rm \
             --entrypoint /root/osv-reporter \
-            -v "$PWD:/github/workspace" \
-            -w /github/workspace \
+            -v "$RUNNER_TEMP:/scan-results" \
             "$OSV_IMAGE" \
-            --output=results.sarif \
-            --old=old-results.json \
-            --new=new-results.json \
+            --output=/scan-results/results.sarif \
+            --old=/scan-results/osv-base.json \
+            --new=/scan-results/osv-head.json \
             --gh-annotations=true \
             --fail-on-vuln=true
