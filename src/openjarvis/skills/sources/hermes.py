@@ -109,7 +109,7 @@ class HermesResolver(SourceResolver):
 
     def list_skills(self) -> List[ResolvedSkill]:
         """Walk skills/<category>/<skill>/SKILL.md."""
-        if self._revision and (self._cache_root / ".git").exists():
+        if self._revision and self._cache_root.exists():
             assert_trusted_checkout(
                 self._cache_root,
                 HERMES_REPO_URL,
