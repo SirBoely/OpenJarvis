@@ -179,7 +179,8 @@ def _assert_no_hidden_index_paths(cache_root: Path) -> None:
         # modifications from the ordinary porcelain status boundary.
         if marker.islower() or marker == "S":
             raise SkillSourceSecurityError(
-                "skill cache index contains hidden assume-unchanged or skip-worktree paths"
+                "skill cache index contains hidden assume-unchanged or "
+                "skip-worktree paths"
             )
 
 
@@ -188,7 +189,7 @@ def assert_trusted_checkout(
     repo_url: str,
     revision: str,
 ) -> None:
-    """Attest origin, immutable object identity, index state and worktree cleanliness."""
+    """Attest origin, object identity, index state and worktree cleanliness."""
     expected_url = normalize_github_https_url(repo_url)
     expected_revision = validate_full_commit_sha(revision)
     _assert_git_directory(cache_root)
