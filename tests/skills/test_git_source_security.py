@@ -149,6 +149,32 @@ def test_mutable_generic_sync_still_rejects_non_github_url(
         resolver.sync()
 
 
+@pytest.mark.parametrize(
+    "resolver_factory",
+    [
+        lambda root, revision: HermesResolver(cache_root=root, revision=revision),
+        lambda root, revision: OpenClawResolver(cache_root=root, revision=revision),
+        lambda root, revision: GitHubResolver(
+            cache_root=root,
+            repo_url="https://github.com/example/skills.git",
+            revision=revision,
+        ),
+    ],
+)
+def test_pinned_existing_cache_without_git_fails_closed(
+    tmp_path: Path,
+    resolver_factory,
+) -> None:
+    cache = tmp_path / "cache"
+    skill_dir = cache / "skills" / "example" / "skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# untrusted\n", encoding="utf-8")
+
+    resolver = resolver_factory(cache, "a" * 40)
+    with pytest.raises(SkillSourceSecurityError, match="non-symlink .git"):
+        resolver.list_skills()
+
+
 def test_clean_checkout_attestation_passes(tmp_path: Path) -> None:
     repo, revision = _make_attested_repo(tmp_path)
     assert_trusted_checkout(
@@ -207,6 +233,53 @@ def test_checkout_attestation_rejects_ignored_content(tmp_path: Path) -> None:
         SkillSourceSecurityError,
         match="modified, untracked or ignored",
     ):
+        assert_trusted_checkout(
+            repo,
+            "https://github.com/example/skills.git",
+            revision,
+        )
+
+
+@pytest.mark.parametrize("index_flag", ["--assume-unchanged", "--skip-worktree"])
+def test_checkout_attestation_rejects_index_flags_that_hide_changes(
+    tmp_path: Path,
+    index_flag: str,
+) -> None:
+    repo, revision = _make_attested_repo(tmp_path)
+    _git(repo, "update-index", index_flag, "README.md")
+    (repo / "README.md").write_text("tampered\n", encoding="utf-8")
+
+    with pytest.raises(SkillSourceSecurityError, match="hidden assume-unchanged"):
+        assert_trusted_checkout(
+            repo,
+            "https://github.com/example/skills.git",
+            revision,
+        )
+
+
+def test_checkout_attestation_rejects_replacement_refs(tmp_path: Path) -> None:
+    repo, revision = _make_attested_repo(tmp_path)
+    (repo / "README.md").write_text("replacement payload\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "replacement")
+    replacement = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "reset", "--hard", revision)
+    _git(repo, "replace", revision, replacement)
+
+    with pytest.raises(SkillSourceSecurityError, match="replacement refs"):
+        assert_trusted_checkout(
+            repo,
+            "https://github.com/example/skills.git",
+            revision,
+        )
+
+
+def test_checkout_attestation_rejects_legacy_grafts(tmp_path: Path) -> None:
+    repo, revision = _make_attested_repo(tmp_path)
+    grafts = repo / ".git" / "info" / "grafts"
+    grafts.write_text(f"{revision}\n", encoding="utf-8")
+
+    with pytest.raises(SkillSourceSecurityError, match="graft"):
         assert_trusted_checkout(
             repo,
             "https://github.com/example/skills.git",
