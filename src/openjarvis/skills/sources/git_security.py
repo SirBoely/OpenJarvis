@@ -110,11 +110,12 @@ def _run_git(
     *args: str,
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """Run Git with hooks/fsmonitor disabled and inherited Git overrides removed."""
+    """Run Git without replacement objects, hooks, fsmonitor or inherited overrides."""
     with tempfile.TemporaryDirectory(prefix="openjarvis-empty-hooks-") as hooks_dir:
         return subprocess.run(
             [
                 "git",
+                "--no-replace-objects",
                 "-c",
                 f"core.hooksPath={hooks_dir}",
                 "-c",
@@ -131,6 +132,8 @@ def _run_git(
 
 
 def _assert_git_directory(cache_root: Path) -> None:
+    if cache_root.is_symlink():
+        raise SkillSourceSecurityError("skill cache root must not be a symlink")
     git_dir = cache_root / ".git"
     if git_dir.is_symlink() or not git_dir.is_dir():
         raise SkillSourceSecurityError(
@@ -138,17 +141,62 @@ def _assert_git_directory(cache_root: Path) -> None:
         )
 
 
+def _assert_no_object_rewrites(cache_root: Path) -> None:
+    """Reject replacement refs and legacy grafts before trusting object identity."""
+    replacements = _run_git(
+        cache_root,
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/replace",
+        capture_output=True,
+    ).stdout.strip()
+    if replacements:
+        raise SkillSourceSecurityError(
+            "skill cache contains Git replacement refs that can rewrite object identity"
+        )
+
+    grafts = cache_root / ".git" / "info" / "grafts"
+    if grafts.exists() or grafts.is_symlink():
+        raise SkillSourceSecurityError(
+            "skill cache contains a legacy Git graft file"
+        )
+
+
+def _assert_no_hidden_index_paths(cache_root: Path) -> None:
+    """Reject index flags that can hide modified tracked files from status output."""
+    listed = _run_git(
+        cache_root,
+        "ls-files",
+        "-v",
+        capture_output=True,
+    ).stdout.splitlines()
+    for entry in listed:
+        if not entry:
+            continue
+        marker = entry[0]
+        # `git ls-files -v` lowercases the tag for assume-unchanged paths;
+        # skip-worktree paths are tagged `S`. Either can suppress worktree
+        # modifications from the ordinary porcelain status boundary.
+        if marker.islower() or marker == "S":
+            raise SkillSourceSecurityError(
+                "skill cache index contains hidden assume-unchanged or skip-worktree paths"
+            )
+
+
 def assert_trusted_checkout(
     cache_root: Path,
     repo_url: str,
     revision: str,
 ) -> None:
-    """Attest origin, HEAD and worktree cleanliness for a pinned checkout."""
+    """Attest origin, immutable object identity, index state and worktree cleanliness."""
     expected_url = normalize_github_https_url(repo_url)
     expected_revision = validate_full_commit_sha(revision)
     _assert_git_directory(cache_root)
 
     try:
+        _assert_no_object_rewrites(cache_root)
+        _assert_no_hidden_index_paths(cache_root)
+
         origin = _run_git(
             cache_root,
             "remote",
