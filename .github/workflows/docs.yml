@@ -45,13 +45,20 @@ jobs:
         run: uv run mkdocs build
 
       - name: Upload artifact
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.ENABLE_GITHUB_PAGES == 'true'
         uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: site/
 
+      - name: Report Pages capability hold
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.ENABLE_GITHUB_PAGES != 'true'
+        run: |
+          echo 'DOCS_BUILD=PASS'
+          echo 'DOCS_DEPLOY=SKIPPED_CAPABILITY_HOLD'
+          echo 'Set repository variable ENABLE_GITHUB_PAGES=true only after GitHub Pages is enabled in repository settings.'
+
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.ENABLE_GITHUB_PAGES == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:
