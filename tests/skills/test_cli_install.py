@@ -40,14 +40,12 @@ class TestCliInstallE2E:
 
         # Create a HermesResolver pointed at the fake cache
         def _make_resolver(*_args, **_kwargs):
-            r = HermesResolver.__new__(HermesResolver)
-            r._cache_root = cache
-            return r
+            return HermesResolver(cache_root=cache, allow_mutable=True)
 
         # Patch the helper that builds resolvers in the CLI
         with patch(
             "openjarvis.cli.skill_cmd._get_resolver",
-            lambda src, url="": _make_resolver(),
+            lambda src, url="", revision="": _make_resolver(),
         ):
             # Patch HermesResolver.sync to no-op (cache is already built)
             with patch.object(HermesResolver, "sync", lambda self: None):

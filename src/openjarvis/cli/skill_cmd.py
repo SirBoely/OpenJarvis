@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 import click
 from rich.console import Console
@@ -156,16 +156,24 @@ def _parse_source_query(query: str) -> tuple[str, str]:
     return source, name
 
 
-def _get_resolver(source: str, url: str = ""):
-    """Return a resolver instance for the given source name."""
+def _source_config_value(source_config: Any, key: str, default: Any = "") -> Any:
+    """Read a source setting from either a TOML mapping or config object."""
+    if isinstance(source_config, dict):
+        return source_config.get(key, default)
+    return getattr(source_config, key, default)
+
+
+def _get_resolver(source: str, url: str = "", revision: str = ""):
+    """Return a resolver instance with a source-specific immutable revision."""
+    revision_value = revision.strip() or None
     if source == "hermes":
         from openjarvis.skills.sources.hermes import HermesResolver
 
-        return HermesResolver()
+        return HermesResolver(revision=revision_value)
     if source == "openclaw":
         from openjarvis.skills.sources.openclaw import OpenClawResolver
 
-        return OpenClawResolver()
+        return OpenClawResolver(revision=revision_value)
     if source == "github":
         if not url:
             raise click.BadParameter("github source requires --url")
@@ -176,7 +184,11 @@ def _get_resolver(source: str, url: str = ""):
         cache = _Path(
             "~/.openjarvis/skill-cache/github/" + url.rstrip("/").rsplit("/", 1)[-1]
         ).expanduser()
-        return GitHubResolver(cache_root=cache, repo_url=url)
+        return GitHubResolver(
+            cache_root=cache,
+            repo_url=url,
+            revision=revision_value,
+        )
     raise click.BadParameter(f"Unknown source: {source!r}")
 
 
@@ -196,7 +208,18 @@ def _get_resolver(source: str, url: str = ""):
     default="",
     help="Repo URL (required when source is 'github').",
 )
-def install(query: str, with_scripts: bool, force: bool, url: str):
+@click.option(
+    "--revision",
+    default="",
+    help="Full 40-character immutable commit SHA for this source.",
+)
+def install(
+    query: str,
+    with_scripts: bool,
+    force: bool,
+    url: str,
+    revision: str,
+):
     """Install a skill from a source.
 
     Example: ``jarvis skill install hermes:apple-notes``
@@ -204,7 +227,7 @@ def install(query: str, with_scripts: bool, force: bool, url: str):
     console = Console()
     source, name = _parse_source_query(query)
 
-    resolver = _get_resolver(source, url=url)
+    resolver = _get_resolver(source, url=url, revision=revision)
     try:
         resolver.sync()
     except Exception as exc:
@@ -267,6 +290,16 @@ def install(query: str, with_scripts: bool, force: bool, url: str):
     help="Import scripts/ directories.",
 )
 @click.option("--force", is_flag=True, default=False, help="Re-import existing skills.")
+@click.option(
+    "--url",
+    default="",
+    help="Repo URL when syncing an explicit github source.",
+)
+@click.option(
+    "--revision",
+    default="",
+    help="Full 40-character immutable commit SHA for an explicit source.",
+)
 def sync(
     source: str,
     category: str,
@@ -274,23 +307,36 @@ def sync(
     search: str,
     with_scripts: bool,
     force: bool,
+    url: str,
+    revision: str,
 ):
     """Bulk install + update from a source (or all configured sources)."""
     console = Console()
 
     cfg = load_config()
 
-    # Determine which sources to sync
-    source_configs: list = []
+    # Determine which sources to sync. Each configured source carries its own
+    # immutable revision so multiple GitHub repositories never share one SHA.
+    source_configs: list[dict[str, Any]] = []
     if source:
-        source_configs.append({"source": source, "filter": {}, "url": ""})
+        source_configs.append(
+            {
+                "source": source,
+                "filter": {},
+                "url": url,
+                "revision": revision,
+            }
+        )
     else:
         for src_cfg in cfg.skills.sources:
             source_configs.append(
                 {
-                    "source": src_cfg.source,
-                    "filter": dict(src_cfg.filter or {}),
-                    "url": src_cfg.url,
+                    "source": _source_config_value(src_cfg, "source", ""),
+                    "filter": dict(
+                        _source_config_value(src_cfg, "filter", {}) or {}
+                    ),
+                    "url": _source_config_value(src_cfg, "url", ""),
+                    "revision": _source_config_value(src_cfg, "revision", ""),
                 }
             )
 
@@ -312,7 +358,11 @@ def sync(
     for src in source_configs:
         console.print(f"[cyan]Syncing {src['source']}...[/cyan]")
         try:
-            resolver = _get_resolver(src["source"], url=src["url"])
+            resolver = _get_resolver(
+                src["source"],
+                url=src["url"],
+                revision=src["revision"],
+            )
             resolver.sync()
         except Exception as exc:
             console.print(f"[red]Failed to sync {src['source']}: {exc}[/red]")
@@ -368,13 +418,19 @@ def sources():
     table.add_column("URL")
     table.add_column("Filter")
     table.add_column("Auto-update")
-    for s in cfg.skills.sources:
-        filt = ", ".join(f"{k}={v}" for k, v in (s.filter or {}).items()) or "—"
+    for source_config in cfg.skills.sources:
+        source_name = _source_config_value(source_config, "source", "")
+        source_url = _source_config_value(source_config, "url", "")
+        source_filter = _source_config_value(source_config, "filter", {}) or {}
+        auto_update = bool(
+            _source_config_value(source_config, "auto_update", False)
+        )
+        filt = ", ".join(f"{k}={v}" for k, v in source_filter.items()) or "—"
         table.add_row(
-            s.source,
-            s.url or "(default)",
+            source_name,
+            source_url or "(default)",
             filt,
-            "yes" if s.auto_update else "no",
+            "yes" if auto_update else "no",
         )
     console.print(table)
 
@@ -444,20 +500,30 @@ def search(query: str, source: str):
         raise SystemExit(1)
 
     sources_to_search = [
-        s for s in cfg.skills.sources if not source or s.source == source
+        source_config
+        for source_config in cfg.skills.sources
+        if not source
+        or _source_config_value(source_config, "source", "") == source
     ]
     if source and not sources_to_search:
         console.print(f"[red]No configured source named '{source}'.[/red]")
         raise SystemExit(1)
 
     q = query.lower().strip()
-    rows: list[tuple[str, str, str, str]] = []  # source, name, category, description
+    rows: list[tuple[str, str, str, str]] = []
     for src_cfg in sources_to_search:
+        source_name = _source_config_value(src_cfg, "source", "")
+        source_url = _source_config_value(src_cfg, "url", "")
+        source_revision = _source_config_value(src_cfg, "revision", "")
         try:
-            resolver = _get_resolver(src_cfg.source, url=src_cfg.url)
+            resolver = _get_resolver(
+                source_name,
+                url=source_url,
+                revision=source_revision,
+            )
             resolver.sync()
         except Exception as exc:
-            console.print(f"[yellow]Skipped {src_cfg.source}: {exc}[/yellow]")
+            console.print(f"[yellow]Skipped {source_name}: {exc}[/yellow]")
             continue
 
         for resolved in resolver.list_skills():
@@ -471,7 +537,7 @@ def search(query: str, source: str):
             if q in haystack:
                 rows.append(
                     (
-                        src_cfg.source,
+                        source_name,
                         resolved.name,
                         getattr(resolved, "category", "") or "",
                         (getattr(resolved, "description", "") or "")[:60],
@@ -506,10 +572,17 @@ def update():
         console.print("[dim]No sources configured.[/dim]")
         return
 
-    for src in cfg.skills.sources:
-        console.print(f"[cyan]Updating {src.source}...[/cyan]")
+    for source_config in cfg.skills.sources:
+        source_name = _source_config_value(source_config, "source", "")
+        source_url = _source_config_value(source_config, "url", "")
+        source_revision = _source_config_value(source_config, "revision", "")
+        console.print(f"[cyan]Updating {source_name}...[/cyan]")
         try:
-            resolver = _get_resolver(src.source, url=src.url)
+            resolver = _get_resolver(
+                source_name,
+                url=source_url,
+                revision=source_revision,
+            )
             resolver.sync()
             console.print("  [green]OK[/green]")
         except Exception as exc:
@@ -540,8 +613,7 @@ def update():
     help="Print discovered patterns without writing manifests.",
 )
 def discover(min_frequency: int, min_outcome: float, dry_run: bool) -> None:
-    """Mine the trace store for recurring tool sequences and write them as
-    discovered skill manifests under ~/.openjarvis/skills/discovered/."""
+    """Mine recurring tool sequences and write discovered skill manifests."""
     console = Console()
     store = _get_trace_store()
     if store is None:
@@ -556,7 +628,6 @@ def discover(min_frequency: int, min_outcome: float, dry_run: bool) -> None:
     mgr = SkillManager(bus=EventBus())
 
     if dry_run:
-        # Use a temporary directory so nothing is persisted
         import tempfile
 
         tmp = Path(tempfile.mkdtemp(prefix="openjarvis-discover-dryrun-"))

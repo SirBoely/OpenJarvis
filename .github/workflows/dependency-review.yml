@@ -1,0 +1,75 @@
+name: Dependency Vulnerability Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+# GitHub native Dependency Review remains a desired defense-in-depth control,
+# but it requires Dependency Graph to be enabled at repository level. This
+# gate remains independently enforceable and compares the exact base/head
+# dependency state with OSV-Scanner.
+permissions:
+  contents: read
+
+jobs:
+  osv-pr-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      OSV_IMAGE: ghcr.io/google/osv-scanner-action@sha256:48406c58197201fe55e56615ad9d414f85063da320e204d0b0ed460fb3908dba
+    steps:
+      - name: Checkout full PR history without persisted credentials
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Pull immutable OSV-Scanner image
+        run: docker pull "$OSV_IMAGE"
+
+      - name: Scan dependency baseline
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git checkout --force "$BASE_SHA"
+          rm -f "$RUNNER_TEMP/osv-base.json"
+          docker run --rm \
+            -v "$PWD:/github/workspace:ro" \
+            -v "$RUNNER_TEMP:/scan-results" \
+            -w /github/workspace \
+            "$OSV_IMAGE" \
+            --format=json \
+            --output=/scan-results/osv-base.json \
+            --recursive ./
+
+      - name: Scan PR dependency state
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git checkout --force "$HEAD_SHA"
+          rm -f "$RUNNER_TEMP/osv-head.json"
+          docker run --rm \
+            -v "$PWD:/github/workspace:ro" \
+            -v "$RUNNER_TEMP:/scan-results" \
+            -w /github/workspace \
+            "$OSV_IMAGE" \
+            --format=json \
+            --output=/scan-results/osv-head.json \
+            --recursive ./
+
+      - name: Fail on newly introduced vulnerabilities
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/osv-base.json"
+          test -s "$RUNNER_TEMP/osv-head.json"
+          docker run --rm \
+            --entrypoint /root/osv-reporter \
+            -v "$RUNNER_TEMP:/scan-results" \
+            "$OSV_IMAGE" \
+            --output=/scan-results/results.sarif \
+            --old=/scan-results/osv-base.json \
+            --new=/scan-results/osv-head.json \
+            --gh-annotations=true \
+            --fail-on-vuln=true
