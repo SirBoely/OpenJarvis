@@ -15,12 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.TRAFFIC_TOKEN || github.token }}
+          token: ${{ secrets.TRAFFIC_TOKEN }}
 
       - name: Fetch clone traffic
         id: traffic
         env:
-          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
         run: |
           set -uo pipefail
           http_code="$(gh api -i repos/${{ github.repository }}/traffic/clones 2>/tmp/traffic-error.txt | awk '/^HTTP\// {code=$2} END {print code}')"
