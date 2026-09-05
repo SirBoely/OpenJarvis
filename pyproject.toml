@@ -196,6 +196,9 @@ select = ["E", "F", "I", "W"]
 # research_loop.py carries long prompt strings too (documented in CLAUDE.md);
 # the ignore was missing here.
 "src/openjarvis/agents/research_loop.py" = ["E501"]
+# EXEC-OS tests intentionally use dense business fixtures; keep the exception
+# scoped to these generated tests rather than relaxing repository-wide linting.
+"tests/test_btrades_executive_os*.py" = ["E501", "I001"]
 
 [dependency-groups]
 dev = [
