@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Sequence
@@ -237,6 +238,9 @@ async def _stream_google(
     temperature: float,
     max_tokens: int,
 ) -> AsyncIterator[str]:
+    if re.fullmatch(r"gemini-[A-Za-z0-9._-]+", model) is None:
+        raise ValueError(f"Invalid Google model name: {model!r}")
+
     keys = _load_keys()
     api_key = keys.get("GEMINI_API_KEY") or keys.get("GOOGLE_API_KEY", "")
     if not api_key:
