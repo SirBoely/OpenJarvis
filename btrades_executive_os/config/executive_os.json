@@ -1,0 +1,45 @@
+{
+  "version": "1.0.0",
+  "mode": "fail_closed",
+  "leaders": [
+    {
+      "id": "business_intelligence_capital_leader",
+      "domains": ["business_intelligence", "capital_management", "finance", "bookkeeping", "unit_economics", "portfolio_prioritization"]
+    },
+    {
+      "id": "data_science_devops_revops_rd_leader",
+      "domains": ["analytics", "data_science", "devops", "revops", "research_and_development", "experimentation", "release_engineering"]
+    },
+    {
+      "id": "governance_legal_compliance_operations_leader",
+      "domains": ["operations", "governance", "legal", "compliance", "risk", "controls", "evidence"]
+    }
+  ],
+  "specialists": [
+    "analytics_agent",
+    "operations_agent",
+    "goal_tracking_agent",
+    "resource_management_system",
+    "feedback_retraining_loop"
+  ],
+  "approval_policy": {
+    "financial_external_writes": "human_required",
+    "legal_external_writes": "human_required",
+    "production_deploy": "ci_and_human_required",
+    "model_promotion": "human_required",
+    "read_only_analytics": "autonomous",
+    "internal_task_generation": "autonomous"
+  },
+  "gates": {
+    "capital": {"minimum_margin_pct": 20, "minimum_cash_buffer_months": 2},
+    "engineering": {"minimum_data_quality": 0.9, "minimum_ci_pass_rate": 0.95},
+    "trust": {"minimum_compliance_coverage": 0.95, "maximum_critical_risks": 0}
+  },
+  "cycles": {
+    "goal_review": "daily",
+    "resource_reallocation": "weekly",
+    "experiment_review": "weekly",
+    "control_evidence_refresh": "daily",
+    "retraining_evaluation": "weekly"
+  }
+}
