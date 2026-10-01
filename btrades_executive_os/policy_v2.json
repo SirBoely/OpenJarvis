@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "evidence_required": ["github", "supabase", "shopify", "pmo", "finance", "compliance"],
+  "execution_mode": "fail_closed",
+  "promotion": {
+    "requires_preflight_pass": true,
+    "requires_ci_pass": true,
+    "requires_executive_pass": true,
+    "requires_canary": true,
+    "human_approval_required": true,
+    "rollback_on_regression": true
+  },
+  "resource_management": {
+    "default_reserve_ratio": 0.25,
+    "bookkeeping_gap_detection": true,
+    "negative_allocation_forbidden": true
+  },
+  "cycles": {
+    "analytics": "hourly",
+    "goal_review": "daily",
+    "evidence_refresh": "hourly",
+    "resource_reallocation": "weekly",
+    "experiment_review": "weekly",
+    "retraining_evaluation": "weekly"
+  },
+  "connectors": {
+    "github": "read_only_evidence",
+    "supabase": "read_only_evidence",
+    "shopify": "read_only_evidence_until_approved",
+    "pmo": "read_only_evidence",
+    "finance": "read_only_evidence",
+    "compliance": "read_only_evidence"
+  }
+}
